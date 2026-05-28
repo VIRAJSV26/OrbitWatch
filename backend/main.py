@@ -417,6 +417,16 @@ class SpaceObjectCreate(BaseModel):
 class SpaceObjectUpdate(BaseModel):
     status: str
 
+class SpaceObjectFullUpdate(BaseModel):
+    name: str
+    object_type: str
+    owner_id: Optional[int] = None
+    shell_id: Optional[str] = None
+    launch_date: Optional[str] = None
+    status: str
+    mass_kg: Optional[float] = None
+    radar_cross_section: Optional[float] = None
+
 class ConjunctionCreate(BaseModel):
     object1_id: int
     object2_id: int
@@ -480,6 +490,35 @@ def update_object_status(object_id: int, update: SpaceObjectUpdate):
     cur = conn.cursor()
     try:
         cur.execute("UPDATE space_objects SET status = %s WHERE object_id = %s RETURNING *;", (update.status, object_id))
+        updated = cur.fetchone()
+        if not updated:
+            raise HTTPException(status_code=404, detail="Object not found")
+        conn.commit()
+        if updated.get('launch_date'):
+            updated['launch_date'] = updated['launch_date'].isoformat()
+        if updated.get('decay_date'):
+            updated['decay_date'] = updated['decay_date'].isoformat()
+        return updated
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+@app.put("/api/objects/{object_id}")
+def update_object_full(object_id: int, update: SpaceObjectFullUpdate):
+    conn = get_db_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            UPDATE space_objects 
+            SET name = %s, object_type = %s, owner_id = %s, shell_id = %s, 
+                launch_date = %s, status = %s, mass_kg = %s, radar_cross_section = %s
+            WHERE object_id = %s RETURNING *;
+        """, (update.name, update.object_type, update.owner_id, update.shell_id, 
+              update.launch_date if update.launch_date else None, update.status, 
+              update.mass_kg, update.radar_cross_section, object_id))
         updated = cur.fetchone()
         if not updated:
             raise HTTPException(status_code=404, detail="Object not found")

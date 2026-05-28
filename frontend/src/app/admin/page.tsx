@@ -216,6 +216,7 @@ function ObjectsTab({ showToast, queryClient }: { showToast: any; queryClient: a
     norad_id: "", name: "", object_type: "SATELLITE", owner_id: "", shell_id: "", 
     launch_date: "", status: "ACTIVE", mass_kg: "", radar_cross_section: ""
   });
+  const [editId, setEditId] = useState<number | null>(null);
 
   const addObj = useMutation({
     mutationFn: async (payload: any) => {
@@ -229,6 +230,26 @@ function ObjectsTab({ showToast, queryClient }: { showToast: any; queryClient: a
     },
     onSuccess: (data) => {
       showToast(`Object created with ID ${data.object_id}`, "success");
+      setForm({ norad_id: "", name: "", object_type: "SATELLITE", owner_id: "", shell_id: "", launch_date: "", status: "ACTIVE", mass_kg: "", radar_cross_section: "" });
+      queryClient.invalidateQueries({ queryKey: ["objects"] });
+    },
+    onError: (err: any) => showToast(err.message, "error"),
+  });
+
+  const editObj = useMutation({
+    mutationFn: async ({ id, payload }: { id: number, payload: any }) => {
+      const res = await fetch(`${API_BASE}/objects/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error("Failed to update object");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      showToast(`Object updated successfully`, "success");
+      setEditId(null);
+      setForm({ norad_id: "", name: "", object_type: "SATELLITE", owner_id: "", shell_id: "", launch_date: "", status: "ACTIVE", mass_kg: "", radar_cross_section: "" });
       queryClient.invalidateQueries({ queryKey: ["objects"] });
     },
     onError: (err: any) => showToast(err.message, "error"),
@@ -261,15 +282,37 @@ function ObjectsTab({ showToast, queryClient }: { showToast: any; queryClient: a
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    addObj.mutate({
+    const payload = {
       ...form,
       norad_id: parseInt(form.norad_id),
       owner_id: form.owner_id ? parseInt(form.owner_id) : null,
       shell_id: form.shell_id || null,
-      launch_date: form.launch_date || null,
+      launch_date: form.launch_date ? form.launch_date.split('T')[0] : null,
       mass_kg: form.mass_kg ? parseFloat(form.mass_kg) : null,
       radar_cross_section: form.radar_cross_section ? parseFloat(form.radar_cross_section) : null,
+    };
+    
+    if (editId) {
+      editObj.mutate({ id: editId, payload });
+    } else {
+      addObj.mutate(payload);
+    }
+  };
+
+  const handleEditClick = (o: any) => {
+    setEditId(o.object_id);
+    setForm({
+      norad_id: o.norad_id.toString(),
+      name: o.name,
+      object_type: o.object_type,
+      owner_id: o.owner_id ? o.owner_id.toString() : "",
+      shell_id: o.shell_id || "",
+      launch_date: o.launch_date ? o.launch_date.split('T')[0] : "",
+      status: o.status,
+      mass_kg: o.mass_kg ? o.mass_kg.toString() : "",
+      radar_cross_section: o.radar_cross_section ? o.radar_cross_section.toString() : ""
     });
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   return (
@@ -277,7 +320,7 @@ function ObjectsTab({ showToast, queryClient }: { showToast: any; queryClient: a
       <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 p-4 border border-cyan-500/20 bg-cyan-950/10">
         <div>
           <label className="block text-xs font-bold text-cyan-400 mb-1">NORAD ID *</label>
-          <input required type="number" value={form.norad_id} onChange={e => setForm({...form, norad_id: e.target.value})} className="w-full bg-slate-900 border border-cyan-500/30 p-2 text-sm text-cyan-100 focus:outline-none focus:border-cyan-400" />
+          <input required type="number" disabled={!!editId} value={form.norad_id} onChange={e => setForm({...form, norad_id: e.target.value})} className={`w-full bg-slate-900 border border-cyan-500/30 p-2 text-sm text-cyan-100 focus:outline-none focus:border-cyan-400 ${editId ? 'opacity-50 cursor-not-allowed' : ''}`} />
         </div>
         <div>
           <label className="block text-xs font-bold text-cyan-400 mb-1">Name *</label>
@@ -328,10 +371,19 @@ function ObjectsTab({ showToast, queryClient }: { showToast: any; queryClient: a
             <input type="number" step="0.01" value={form.radar_cross_section} onChange={e => setForm({...form, radar_cross_section: e.target.value})} className="w-full bg-slate-900 border border-cyan-500/30 p-2 text-sm text-cyan-100 focus:outline-none focus:border-cyan-400" />
           </div>
         </div>
-        <div className="col-span-full mt-2">
+        <div className="col-span-full mt-2 flex gap-4">
           <button type="submit" className="px-6 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-sm tracking-wider">
-            ADD OBJECT
+            {editId ? "UPDATE OBJECT" : "ADD OBJECT"}
           </button>
+          {editId && (
+            <button 
+              type="button" 
+              onClick={() => { setEditId(null); setForm({ norad_id: "", name: "", object_type: "SATELLITE", owner_id: "", shell_id: "", launch_date: "", status: "ACTIVE", mass_kg: "", radar_cross_section: "" }); }}
+              className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm tracking-wider border border-slate-600"
+            >
+              CANCEL
+            </button>
+          )}
         </div>
       </form>
 
@@ -366,7 +418,13 @@ function ObjectsTab({ showToast, queryClient }: { showToast: any; queryClient: a
                   <option value="DECAYED">DECAYED</option>
                 </select>
               </td>
-              <td className="p-2">
+              <td className="p-2 space-x-3">
+                <button 
+                  onClick={() => handleEditClick(o)}
+                  className="text-cyan-400 hover:text-cyan-300 text-xs font-bold"
+                >
+                  EDIT
+                </button>
                 <button 
                   onClick={() => { if(window.confirm("Delete this object?")) deleteObj.mutate(o.object_id) }}
                   className="text-red-400 hover:text-red-300 text-xs font-bold"
